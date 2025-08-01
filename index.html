@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Te Amo Hana</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: radial-gradient(ellipse at bottom, #1B0D2A 0%, #09010F 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Arial', sans-serif;
+            cursor: pointer;
+        }
+
+        canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        .message {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 2s;
+            pointer-events: none;
+        }
+
+        .te-amo {
+            font-size: 5rem;
+            color: #FF6BD5;
+            text-shadow: 0 0 20px #FF00AA, 0 0 30px #FF00AA;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .my-love {
+            font-size: 3rem;
+            color: #C86BFF;
+            text-shadow: 0 0 15px #AA00FF, 0 0 25px #AA00FF;
+            font-style: italic;
+        }
+
+        .instructions {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1rem;
+            z-index: 2;
+        }
+
+        .stage-display {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: rgba(255, 255, 255, 0.7);
+            z-index: 2;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="universe"></canvas>
+    
+    <div class="message">
+        <div class="te-amo">Te amo</div>
+        <div class="my-love">Eres mi vida entera</div>
+    </div>
+
+    <div class="instructions">Haz clic para revelar el mensaje de amor</div>
+    <div class="stage-display" id="stageDisplay">Preparado</div>
+
+    <script>
+        // Configuración avanzada
+        const config = {
+            particleCount: 2000,
+            heartFormationSpeed: 0.15, // Más rápido
+            textFormationSpeed: 0.1,
+            baseSize: 2,
+            heartDuration: 2000 // 2 segundos mostrando el corazón
+        };
+
+        // Elementos del DOM
+        const canvas = document.getElementById('universe');
+        const ctx = canvas.getContext('2d');
+        const message = document.querySelector('.message');
+        const instructions = document.querySelector('.instructions');
+        const stageDisplay = document.getElementById('stageDisplay');
+
+        // Estado de la animación
+        let particles = [];
+        let stage = 0; // 0: esperando, 1: formando corazón, 2: mostrando corazón, 3: formando texto, 4: mostrando texto
+        let animationId;
+        let heartCenter = { x: 0, y: 0 };
+        let stageStartTime;
+        let textParticles = [];
+        let textCanvas, textCtx;
+
+        // Fuentes de texto
+        const texts = [
+            { str: "❤️ Me encantas mucho ❤️", size: 120, y: -60, color: [255, 107, 213] }, // Rosa brillante
+            { str: "Eres el amor de mi vida", size: 80, y: 60, color: [200, 107, 255] }    // Morado brillante
+        ];
+
+        // Colores morados y rosas con variaciones
+        const baseColors = [
+            [255, 107, 213], // Rosa neón
+            [255, 150, 230], // Rosa claro
+            [200, 107, 255], // Morado neón
+            [180, 120, 255], // Morado claro
+            [230, 150, 255]  // Rosa morado
+        ];
+
+        // Inicialización
+        function init() {
+            resizeCanvas();
+            createTextCanvas();
+            createParticles();
+            animate();
+            addEventListeners();
+        }
+
+        // Ajustar tamaño del canvas
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            heartCenter = { x: canvas.width / 2, y: canvas.height / 2 };
+            if (textCanvas) {
+                textCanvas.width = canvas.width;
+                textCanvas.height = canvas.height;
+            }
+        }
+
+        // Crear canvas oculto para procesar texto
+        function createTextCanvas() {
+            textCanvas = document.createElement('canvas');
+            textCanvas.width = canvas.width;
+            textCanvas.height = canvas.height;
+            textCanvas.style.display = 'none';
+            document.body.appendChild(textCanvas);
+            
+            textCtx = textCanvas.getContext('2d');
+        }
+
+        // Generar datos para el texto
+        function generateTextPixels() {
+            textParticles = [];
+            textCtx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            texts.forEach(text => {
+                textCtx.font = `bold ${text.size}px Arial`;
+                textCtx.fillStyle = `rgb(${text.color.join(',')})`;
+                textCtx.textAlign = 'center';
+                textCtx.textBaseline = 'middle';
+                textCtx.fillText(text.str, heartCenter.x, heartCenter.y + text.y);
+            });
+            
+            const imageData = textCtx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            const step = 3; // Menor espaciado para más detalle
+            
+            for (let y = 0; y < canvas.height; y += step) {
+                for (let x = 0; x < canvas.width; x += step) {
+                    const index = (y * canvas.width + x) * 4;
+                    if (data[index + 3] > 128) {
+                        const color = [data[index], data[index + 1], data[index + 2]];
+                        textParticles.push({ x, y, color });
+                    }
+                }
+            }
+            
+            assignTextTargets();
+        }
+
+        // Asignar objetivos de texto
+        function assignTextTargets() {
+            // Mezclar y asignar
+            shuffleArray(textParticles);
+            
+            particles.forEach((particle, i) => {
+                const textParticle = textParticles[i % textParticles.length];
+                if (textParticle) {
+                    particle.textTarget = {
+                        x: textParticle.x,
+                        y: textParticle.y,
+                        color: textParticle.color
+                    };
+                }
+            });
+        }
+
+        // Crear partículas
+        function createParticles() {
+            particles = [];
+            
+            for (let i = 0; i < config.particleCount; i++) {
+                particles.push(new Particle());
+            }
+        }
+
+        // Clase Partícula optimizada
+        class Particle {
+            constructor() {
+                this.reset(true);
+                this.size = Math.random() * config.baseSize + 1;
+                this.baseColor = baseColors[Math.floor(Math.random() * baseColors.length)];
+                this.color = [...this.baseColor];
+                this.alpha = 0.1;
+                this.velocity = { x: 0, y: 0 };
+                this.textTarget = null;
+                this.inPlace = false;
+            }
+
+            reset(initial = false) {
+                if (initial) {
+                    this.x = Math.random() * canvas.width;
+                    this.y = Math.random() * canvas.height;
+                } else {
+                    this.x = Math.random() > 0.5 ? 0 : canvas.width;
+                    this.y = Math.random() * canvas.height;
+                }
+                this.inPlace = false;
+            }
+
+            update() {
+                if (stage === 1) {
+                    // Formar corazón rápidamente
+                    const heartPos = getHeartPosition(particles.indexOf(this) / particles.length);
+                    const dx = heartPos.x - this.x;
+                    const dy = heartPos.y - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < 5) {
+                        this.inPlace = true;
+                    } else {
+                        this.x += dx * config.heartFormationSpeed;
+                        this.y += dy * config.heartFormationSpeed;
+                    }
+                    
+                    // Aumentar alpha al acercarse
+                    this.alpha = Math.min(1, this.alpha + 0.05);
+                    
+                } else if (stage === 3) {
+                    // Transición a texto
+                    if (this.textTarget) {
+                        const dx = this.textTarget.x - this.x;
+                        const dy = this.textTarget.y - this.y;
+                        
+                        this.x += dx * config.textFormationSpeed;
+                        this.y += dy * config.textFormationSpeed;
+                        
+                        // Cambiar color gradualmente
+                        this.color[0] += (this.textTarget.color[0] - this.color[0]) * 0.05;
+                        this.color[1] += (this.textTarget.color[1] - this.color[1]) * 0.05;
+                        this.color[2] += (this.textTarget.color[2] - this.color[2]) * 0.05;
+                    }
+                }
+                
+                // Pequeño movimiento aleatorio para efecto orgánico
+                if (stage > 0 && stage < 4) {
+                    this.x += (Math.random() - 0.5) * 0.3;
+                    this.y += (Math.random() - 0.5) * 0.3;
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                
+                // Dibujar como círculo o cuadrado aleatorio para variedad
+                if (Math.random() > 0.7) {
+                    // Cuadrado (para efecto de brillo diferente)
+                    const size = this.size * (1 + Math.sin(Date.now() * 0.001) * 0.2);
+                    ctx.rect(this.x - size/2, this.y - size/2, size, size);
+                } else {
+                    // Círculo
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                }
+                
+                ctx.fillStyle = `rgba(${this.color.join(',')}, ${this.alpha})`;
+                ctx.fill();
+                
+                // Brillo intenso cuando están en posición
+                if ((stage === 2 || stage === 4) && this.inPlace) {
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = `rgba(${this.color.join(',')}, ${this.alpha * 0.7})`;
+                }
+            }
+        }
+
+        // Obtener posición en el corazón
+        function getHeartPosition(t) {
+            const angle = t * Math.PI * 2;
+            // Ecuación paramétrica del corazón
+            const x = 16 * Math.pow(Math.sin(angle), 3);
+            const y = -(13 * Math.cos(angle) - 5 * Math.cos(2*angle) - 2 * Math.cos(3*angle) - Math.cos(4*angle));
+            // Escalar y centrar
+            return {
+                x: heartCenter.x + x * 12, // Corazón más grande
+                y: heartCenter.y + y * 12
+            };
+        }
+
+        // Animación principal
+        function animate() {
+            // Limpiar con desvanecimiento para efecto de rastro
+            ctx.fillStyle = 'rgba(27, 13, 42, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Actualizar lógica de etapas
+            updateStageLogic();
+            
+            // Actualizar y dibujar partículas
+            particles.forEach(particle => {
+                particle.update();
+                particle.draw();
+            });
+            
+            // Mostrar etapa actual
+            updateStageDisplay();
+            
+            animationId = requestAnimationFrame(animate);
+        }
+
+        // Lógica de transición entre etapas
+        function updateStageLogic() {
+            if (stage === 1) {
+                // Verificar si todas las partículas están en posición (corazón)
+                const allInPlace = particles.filter(p => p.inPlace).length > particles.length * 0.95;
+                if (allInPlace) {
+                    stage = 2;
+                    stageStartTime = Date.now();
+                }
+            } else if (stage === 2) {
+                // Esperar el tiempo configurado mostrando el corazón
+                if (Date.now() - stageStartTime > config.heartDuration) {
+                    stage = 3;
+                    generateTextPixels();
+                }
+            } else if (stage === 3) {
+                // Verificar si las partículas están en posición (texto)
+                const closeEnough = particles.filter(p => {
+                    if (!p.textTarget) return true;
+                    const dx = p.textTarget.x - p.x;
+                    const dy = p.textTarget.y - p.y;
+                    return Math.sqrt(dx * dx + dy * dy) < 5;
+                }).length > particles.length * 0.95;
+                
+                if (closeEnough) {
+                    stage = 4;
+                    stageStartTime = Date.now();
+                    message.style.opacity = 1;
+                }
+            }
+        }
+
+        // Mostrar etapa actual
+        function updateStageDisplay() {
+            const stages = [
+                "Preparado",
+                "Formando corazón...",
+                "Corazón de amor 💜",
+                "Formando mensaje...",
+                "Te amo 💖 My love"
+            ];
+            stageDisplay.textContent = stages[stage];
+        }
+
+        // Event listeners
+        function addEventListeners() {
+            window.addEventListener('resize', resizeCanvas);
+            
+            canvas.addEventListener('click', () => {
+                if (stage === 0 || stage === 4) {
+                    stage = 1;
+                    instructions.classList.add('hidden');
+                    particles.forEach(p => {
+                        p.inPlace = false;
+                        p.alpha = 0.1;
+                        p.textTarget = null;
+                    });
+                }
+            });
+        }
+
+        // Función para mezclar array
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // Iniciar todo
+        init();
+    </script>
+</body>
+</html>
